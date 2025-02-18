@@ -13,6 +13,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import Header
 import numpy as np
+import os
 
 # import sys, getopt # no more needed 
 
@@ -25,8 +26,11 @@ class ImageSubscriber(Node):
             '/mono_left',
             self.image_callback,
             10)
-        self.cv_window_name = "templateImage"
-        cv.namedWindow(self.cv_window_name, cv.WINDOW_NORMAL)  # Allow resizing
+        if 'DISPLAY' in os.environ:
+            self.cv_window_name = "templateImage"
+            cv.namedWindow(self.cv_window_name, cv.WINDOW_NORMAL)  # Allow resizing
+        else:
+            self.cv_window_name = None
         fn1 = '10x18cm_at_d_90cm.png'
         self.templt_img = cv.imread(cv.samples.findFile(fn1), cv.IMREAD_GRAYSCALE)
         feature_name = 'sift'
@@ -82,7 +86,8 @@ class ImageSubscriber(Node):
                     _vis = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
 
                 match_and_draw(self.cv_window_name)
-                cv.waitKey(1)
+                if self.cv_window_name is not None:
+                    cv.waitKey(1)
             else:
                 self.get_logger().error("Could not create OpenCV image. Check encoding and data.")
 
@@ -170,7 +175,8 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
         cv.polylines(vis, [corners], True, (0, 255, 0),3)
         x, y, w, h = cv.boundingRect(corners)
         cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
-    cv.imshow(win, vis)
+    if win is not None:
+        cv.imshow(win, vis)
     
 
 
@@ -248,7 +254,8 @@ def main(args=None):
     rclpy.spin(image_subscriber)
 
     # Destroy the window when the node is stopped
-    cv.destroyAllWindows()
+    if 'DISPLAY' in os.environ:
+        cv.destroyAllWindows()
     image_subscriber.destroy_node()
     rclpy.shutdown()
 
