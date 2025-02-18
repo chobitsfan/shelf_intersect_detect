@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
+# republish the image after the template has been detected
 # tested on rapsberry pi in virtualenvironment envDepthAI
 # with an oak camera connected to the pi, run the publisher:
 # python mono_preview_pub.py
 # in another terminal or tab in tmux, run the publisher with template detection (this file):
-# python 
+# the published image with template is published and can be seen in rviz with topic
+# templatematch_image
 
 
 import cv2 as cv
-import depthai as dai
+# import depthai as dai
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -17,6 +19,7 @@ import os
 
 # import sys, getopt # no more needed 
 
+# subscriber then publisher
 class ImageSubscriber(Node):
 
     def __init__(self):
@@ -25,6 +28,10 @@ class ImageSubscriber(Node):
             Image,
             '/mono_left',
             self.image_callback,
+            10)
+        self.publisher = self.create_publisher(
+            Image,
+            '/templatematch_image',  # Publish the image with template to a new topic
             10)
         if 'DISPLAY' in os.environ:
             self.cv_window_name = "templateImage"
@@ -84,10 +91,22 @@ class ImageSubscriber(Node):
                         print('%d matches found, not enough for homography estimation' % len(p1))
 
                     _vis = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
+                    cv.imshow(win, _vis)
+                    return _vis
 
-                match_and_draw(self.cv_window_name)
-                if self.cv_window_name is not None:
-                    cv.waitKey(1)
+                tempmatchimg = match_and_draw(self.cv_window_name)
+
+                # new ROS Image message following Chobits' model
+                new_msg = Image()
+                new_msg.header = msg.header  
+                new_msg.height = height
+                new_msg.width = width
+                new_msg.encoding = "bgr8"  # encoding: color to show the template ROI
+                new_msg.step = width * 3  # BGR8: 3 bytes per pixel
+                new_msg.data = tempmatchimg.tobytes() # Convert to bytes
+
+                self.publisher.publish(new_msg)
+                cv.waitKey(1)
             else:
                 self.get_logger().error("Could not create OpenCV image. Check encoding and data.")
 
@@ -151,6 +170,7 @@ def filter_matches(kp1, kp2, matches, ratio = 0.75):
     p2 = np.float32([kp.pt for kp in mkp2])
     kp_pairs = zip(mkp1, mkp2)
     return p1, p2, list(kp_pairs)
+
 def explore_match_simple(win, img1, img2, kp_pairs, H = None):
     '''
     Simplified version of simple match, without mouse interaction 
@@ -175,78 +195,9 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
         cv.polylines(vis, [corners], True, (0, 255, 0),3)
         x, y, w, h = cv.boundingRect(corners)
         cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
-    if win is not None:
-        cv.imshow(win, vis)
-    
-
-
-def explore_match(win, img1, frame_gray, kp_pairs, status = None, H = None):
-    h1, w1 = img1.shape[:2]
-    h2, w2 = frame_gray.shape[:2]
-    vis = np.zeros((max(h1, h2), w1+w2), np.uint8)
-    vis[:h1, :w1] = img1
-    vis[:h2, w1:w1+w2] = frame_gray
-    vis = cv.cvtColor(vis, cv.COLOR_GRAY2BGR)
-
-    if H is not None:
-        corners = np.float32([[0, 0], [w1, 0], [w1, h1], [0, h1]])
-        corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2) + (w1, 0) )
-        cv.polylines(vis, [corners], True, (255, 255, 255))
-
-    if status is None:
-        status = np.ones(len(kp_pairs), np.bool_)
-        status = status.reshape((len(kp_pairs), 1))
-    p1, p2 = [], []  # python 2 / python 3 change of zip unpacking
-    for kpp in kp_pairs:
-        p1.append(np.int32(kpp[0].pt))
-        p2.append(np.int32(np.array(kpp[1].pt) + [w1, 0]))
-
-    green = (0, 255, 0)
-    red = (0, 0, 255)
-    kp_color = (51, 103, 236)
-    for (x1, y1), (x2, y2), inlier in zip(p1, p2, status):
-        if inlier:
-            col = green
-            cv.circle(vis, (x1, y1), 2, col, -1)
-            cv.circle(vis, (x2, y2), 2, col, -1)
-        else:
-            col = red
-            r = 2
-            thickness = 3
-            cv.line(vis, (x1-r, y1-r), (x1+r, y1+r), col, thickness)
-            cv.line(vis, (x1-r, y1+r), (x1+r, y1-r), col, thickness)
-            cv.line(vis, (x2-r, y2-r), (x2+r, y2+r), col, thickness)
-            cv.line(vis, (x2-r, y2+r), (x2+r, y2-r), col, thickness)
-    vis0 = vis.copy()
-    for (x1, y1), (x2, y2), inlier in zip(p1, p2, status):
-        if inlier:
-            cv.line(vis, (x1, y1), (x2, y2), green)
-
-    cv.imshow(win, vis)
-
-    def onmouse(event, x, y, flags, param):
-        cur_vis = vis
-        if flags & cv.EVENT_FLAG_LBUTTON:
-            cur_vis = vis0.copy()
-            r = 8
-            m = (anorm(np.array(p1) - (x, y)) < r) | (anorm(np.array(p2) - (x, y)) < r)
-            idxs = np.where(m)[0]
-
-            kp1s, kp2s = [], []
-            for i in idxs:
-                (x1, y1), (x2, y2) = p1[i], p2[i]
-                col = (red, green)[status[i][0]]
-                cv.line(cur_vis, (x1, y1), (x2, y2), col)
-                kp1, kp2 = kp_pairs[i]
-                kp1s.append(kp1)
-                kp2s.append(kp2)
-            cur_vis = cv.drawKeypoints(cur_vis, kp1s, None, flags=4, color=kp_color)
-            cur_vis[:,w1:] = cv.drawKeypoints(cur_vis[:,w1:], kp2s, None, flags=4, color=kp_color)
-
-        cv.imshow(win, cur_vis)
-    cv.setMouseCallback(win, onmouse)
+    # cv.imshow(win, vis)
     return vis
-
+    
 
 def main(args=None):
     rclpy.init(args=args)
@@ -254,8 +205,7 @@ def main(args=None):
     rclpy.spin(image_subscriber)
 
     # Destroy the window when the node is stopped
-    if 'DISPLAY' in os.environ:
-        cv.destroyAllWindows()
+    cv.destroyAllWindows()
     image_subscriber.destroy_node()
     rclpy.shutdown()
 
