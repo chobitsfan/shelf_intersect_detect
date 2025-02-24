@@ -91,7 +91,8 @@ class ImageSubscriber(Node):
                         print('%d matches found, not enough for homography estimation' % len(p1))
 
                     _vis = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
-                    cv.imshow(win, _vis)
+                    if win is not None:
+                        cv.imshow(win, _vis)
                     return _vis
 
                 tempmatchimg = match_and_draw(self.cv_window_name)
@@ -106,7 +107,8 @@ class ImageSubscriber(Node):
                 new_msg.data = tempmatchimg.tobytes() # Convert to bytes
 
                 self.publisher.publish(new_msg)
-                cv.waitKey(1)
+                if self.cv_window_name is not None:
+                    cv.waitKey(1)
             else:
                 self.get_logger().error("Could not create OpenCV image. Check encoding and data.")
 
