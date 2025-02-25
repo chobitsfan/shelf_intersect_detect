@@ -108,7 +108,8 @@ class ImageSubscriber(Node):
                         print('%d matches found, not enough for homography estimation' % len(p1))
 
                     _vis, _tempcog = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
-                    cv.imshow(win, _vis)
+                    if win is not None:
+                        cv.imshow(win, _vis)
                     return _vis, _tempcog
 
                 tempmatchimg,tempcog = match_and_draw(self.cv_window_name)
@@ -147,7 +148,8 @@ class ImageSubscriber(Node):
                 point_msg.z = tempcog3d[2]
                 self.point_publisher.publish(point_msg)
                 self.get_logger().info(f" template COG: x = {point_msg.x,point_msg.y,point_msg.z}")
-                cv.waitKey(1)
+                if self.cv_window_name is not None:
+                    cv.waitKey(1)
             else:
                 self.get_logger().error("Could not create OpenCV image. Check encoding and data.")
 
