@@ -6,6 +6,7 @@
 # in another terminal or tab in tmux, run the publisher with template detection (this file):
 # the published image with template is published and can be seen in rviz with topic
 # templatematch_image
+# added: publish the centroid of the detected template ROI (both as Point and PointStamped)
 
 
 import cv2 as cv
@@ -15,6 +16,8 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import Header
 import numpy as np
+# for point cloud
+from geometry_msgs.msg import Point,PointStamped
 import os
 
 # import sys, getopt # no more needed 
@@ -33,12 +36,24 @@ class ImageSubscriber(Node):
             Image,
             '/templatematch_image',  # Publish the image with template to a new topic
             10)
+        self.point_publisher = self.create_publisher(
+            Point,
+            '/templateCOG',  # template Center of Gravity
+            10)
+        self.pointstamped_pub = self.create_publisher(
+            PointStamped,
+            '/templateCOG_stampd',  # template Center of Gravity
+            10)
+        # self.timer_ = self.create_timer(1.0,self.image_callback)
+        self.seq = 0
         if 'DISPLAY' in os.environ:
             self.cv_window_name = "templateImage"
             cv.namedWindow(self.cv_window_name, cv.WINDOW_NORMAL)  # Allow resizing
         else:
             self.cv_window_name = None
-        fn1 = '10x18cm_at_d_90cm.png'
+        # fn1 = '10x18cm_at_d_90cm.png'
+        fn1 = 'cropped_image.png'
+
         self.templt_img = cv.imread(cv.samples.findFile(fn1), cv.IMREAD_GRAYSCALE)
         feature_name = 'sift'
         self.detector = cv.SIFT_create()
@@ -52,7 +67,9 @@ class ImageSubscriber(Node):
         if self.detector is None:
             print('unknown feature:', feature_name)
             sys.exit(1)
+        # self.tempcog = np.array([[1.0,2.0,3.0]],dtype=np.float32)
 
+        # TODO: return template COG 
         self.kp1, self.desc1 = self.detector.detectAndCompute(self.templt_img, None)
 
     def image_callback(self, msg):
@@ -90,11 +107,11 @@ class ImageSubscriber(Node):
                         H, status = None, None
                         print('%d matches found, not enough for homography estimation' % len(p1))
 
-                    _vis = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
+                    _vis, _tempcog = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
                     cv.imshow(win, _vis)
-                    return _vis
+                    return _vis, _tempcog
 
-                tempmatchimg = match_and_draw(self.cv_window_name)
+                tempmatchimg,tempcog = match_and_draw(self.cv_window_name)
 
                 # new ROS Image message following Chobits' model
                 new_msg = Image()
@@ -106,6 +123,30 @@ class ImageSubscriber(Node):
                 new_msg.data = tempmatchimg.tobytes() # Convert to bytes
 
                 self.publisher.publish(new_msg)
+
+                # publish the template COG as a geometry_msgs
+                # add fake depth(for testing function) to point tempcog
+                tempcog3d = [float(tempcog[0]/100.0), float(tempcog[1]/100.0),1.0]
+                # tempcog3d = np.array([[1.0,2.0,3.0]],dtype=np.float32) # for test
+                print(f'tempcog = {tempcog}, template_COG = {tempcog3d}')
+                # point stamped to show in rviz2
+                pointstamped_msg = PointStamped()
+                pointstamped_msg.header = Header()
+                # pointstamped_msg.header.stamp = self.get_clock().now().to_msg()
+                pointstamped_msg.header.frame_id = 'map'
+                # pointstamped_msg.header.seq = self.seq
+                pointstamped_msg.point.x = tempcog3d[0]
+                pointstamped_msg.point.y = tempcog3d[1]
+                pointstamped_msg.point.z = tempcog3d[2]
+                self.pointstamped_pub.publish(pointstamped_msg)
+                self.get_logger().info(f" template COG stamped: x,y,z = {pointstamped_msg.point.x,pointstamped_msg.point.y,pointstamped_msg.point.z}")
+                # simple point (seems can't be shown in rviz)
+                point_msg = Point()
+                point_msg.x = tempcog3d[0]
+                point_msg.y = tempcog3d[1]
+                point_msg.z = tempcog3d[2]
+                self.point_publisher.publish(point_msg)
+                self.get_logger().info(f" template COG: x = {point_msg.x,point_msg.y,point_msg.z}")
                 cv.waitKey(1)
             else:
                 self.get_logger().error("Could not create OpenCV image. Check encoding and data.")
@@ -179,6 +220,7 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
     img1 : template
     img2: target image
     H: result of findHomography
+    return the visible image with template drown and the centroid (COG) of the template
     '''
     h1, w1 = img1.shape[:2]
     h2, w2 = img2.shape[:2]
@@ -187,16 +229,19 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
     vis = cv.cvtColor(img2, cv.COLOR_GRAY2BGR)
     
     # draw polyline around detected match in the target image
-    # TODO: simply draw a rectangle
+    # simply draw a rectangle
     if H is not None:
-        print(f'H={H}')
         corners = np.float32([[0, 0], [w1, 0], [w1, h1], [0, h1]])
         corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2)  )
         cv.polylines(vis, [corners], True, (0, 255, 0),3)
         x, y, w, h = cv.boundingRect(corners)
         cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        tempcog = (int(x+w/2),int(y+h/2))
+        cv.circle(vis,tempcog,10,(200,0,0),-1,)
+        print(f'H={H},template centroid={tempcog}')
+        
     # cv.imshow(win, vis)
-    return vis
+    return vis,tempcog
     
 
 def main(args=None):
