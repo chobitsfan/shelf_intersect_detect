@@ -127,27 +127,31 @@ class ImageSubscriber(Node):
 
                 # publish the template COG as a geometry_msgs
                 # add fake depth(for testing function) to point tempcog
-                tempcog3d = [float(tempcog[0]/100.0), float(tempcog[1]/100.0),1.0]
-                # tempcog3d = np.array([[1.0,2.0,3.0]],dtype=np.float32) # for test
-                print(f'tempcog = {tempcog}, template_COG = {tempcog3d}')
-                # point stamped to show in rviz2
-                pointstamped_msg = PointStamped()
-                pointstamped_msg.header = Header()
-                # pointstamped_msg.header.stamp = self.get_clock().now().to_msg()
-                pointstamped_msg.header.frame_id = 'map'
-                # pointstamped_msg.header.seq = self.seq
-                pointstamped_msg.point.x = tempcog3d[0]
-                pointstamped_msg.point.y = tempcog3d[1]
-                pointstamped_msg.point.z = tempcog3d[2]
-                self.pointstamped_pub.publish(pointstamped_msg)
-                self.get_logger().info(f" template COG stamped: x,y,z = {pointstamped_msg.point.x,pointstamped_msg.point.y,pointstamped_msg.point.z}")
-                # simple point (seems can't be shown in rviz)
-                point_msg = Point()
-                point_msg.x = tempcog3d[0]
-                point_msg.y = tempcog3d[1]
-                point_msg.z = tempcog3d[2]
-                self.point_publisher.publish(point_msg)
-                self.get_logger().info(f" template COG: x = {point_msg.x,point_msg.y,point_msg.z}")
+                # publish only if a valid COG is found
+                if tempcog is not None:
+                    tempcog3d = [float(tempcog[0]/100.0), float(tempcog[1]/100.0),1.0]
+                    # tempcog3d = np.array([[1.0,2.0,3.0]],dtype=np.float32) # for test
+                    print(f'tempcog = {tempcog}, template_COG = {tempcog3d}')
+                    # point stamped to show in rviz2
+                    pointstamped_msg = PointStamped()
+                    pointstamped_msg.header = Header()
+                    # pointstamped_msg.header.stamp = self.get_clock().now().to_msg()
+                    pointstamped_msg.header.frame_id = 'map'
+                    # pointstamped_msg.header.seq = self.seq
+                    pointstamped_msg.point.x = tempcog3d[0]
+                    pointstamped_msg.point.y = tempcog3d[1]
+                    pointstamped_msg.point.z = tempcog3d[2]
+                    self.pointstamped_pub.publish(pointstamped_msg)
+                    self.get_logger().info(f" template COG stamped: x,y,z = {pointstamped_msg.point.x,pointstamped_msg.point.y,pointstamped_msg.point.z}")
+                    # simple point (seems can't be shown in rviz)
+                    point_msg = Point()
+                    point_msg.x = tempcog3d[0]
+                    point_msg.y = tempcog3d[1]
+                    point_msg.z = tempcog3d[2]
+                    self.point_publisher.publish(point_msg)
+                    self.get_logger().info(f" template COG: x = {point_msg.x,point_msg.y,point_msg.z}")
+                else:
+                    self.get_logger().info(f"no valide template COG")
                 if self.cv_window_name is not None:
                     cv.waitKey(1)
             else:
@@ -228,17 +232,29 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
     h2, w2 = img2.shape[:2]
     #vis = np.zeros(h2,w2, np.uint8)
     #vis = img2
+    asp_ratio = h1/w1 # aspect ratio of the input template image
+    min_asp_ratio,max_asp_ratio = 0.9 * asp_ratio, 1.1*asp_ratio # min and max acceptable  aspect ratio
+    min_h1,max_h1 = 70,150 # maximum apparent height of the tmplate in the image
+    min_corner_angle,max_corner_angle = 70,110 # min and maximum acceptable angles of the corners of the matched template polygone
+
     vis = cv.cvtColor(img2, cv.COLOR_GRAY2BGR)
     
     # draw polyline around detected match in the target image
     # simply draw a rectangle
+    tempcog = None
     if H is not None:
         corners = np.float32([[0, 0], [w1, 0], [w1, h1], [0, h1]])
         corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2)  )
         cv.polylines(vis, [corners], True, (0, 255, 0),3)
         x, y, w, h = cv.boundingRect(corners)
-        cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
-        tempcog = (int(x+w/2),int(y+h/2))
+        print(f'bng rect ={x,y,w,h} ')
+        cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2) # keep here for debg for now
+        if (h > min_h1) and (h < max_h1):
+            if (w >  min_h1 / asp_ratio) and  (w < max_h1 / asp_ratio): 
+                # if (h/w > min_asp_ratio) and (h/w < max_asp_ratio):
+                    # tempcog = (int(x+w/2),int(y+h/2))
+                tempcog = (int(x+w/2),int(y+h/2))
+
         cv.circle(vis,tempcog,10,(200,0,0),-1,)
         print(f'H={H},template centroid={tempcog}')
         
