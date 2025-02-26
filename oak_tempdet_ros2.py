@@ -8,7 +8,6 @@
 # templatematch_image
 # added: publish the centroid of the detected template ROI (both as Point and PointStamped)
 
-
 import cv2 as cv
 # import depthai as dai
 import rclpy
@@ -246,17 +245,67 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
         corners = np.float32([[0, 0], [w1, 0], [w1, h1], [0, h1]])
         corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2)  )
         cv.polylines(vis, [corners], True, (0, 255, 0),3)
-        x, y, w, h = cv.boundingRect(corners)
-        print(f'bng rect ={x,y,w,h} ')
-        cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2) # keep here for debg for now
-        if (h > min_h1) and (h < max_h1):
-            if (w >  min_h1 / asp_ratio) and  (w < max_h1 / asp_ratio): 
-                # if (h/w > min_asp_ratio) and (h/w < max_asp_ratio):
-                    # tempcog = (int(x+w/2),int(y+h/2))
-                tempcog = (int(x+w/2),int(y+h/2))
+        # x, y, w, h = cv.boundingRect(corners)
+        # print(f'bng rect ={x,y,w,h} ')
+        # cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2) # keep here for debg for now
+        # if (h > min_h1) and (h < max_h1):
+        #     if (w >  min_h1 / asp_ratio) and  (w < max_h1 / asp_ratio): 
+        #         # if (h/w > min_asp_ratio) and (h/w < max_asp_ratio):
+        #             # tempcog = (int(x+w/2),int(y+h/2))
+        #         tempcog = (int(x+w/2),int(y+h/2))
+        #
+        # cv.circle(vis,tempcog,10,(200,0,0),-1,)
+        # print(f'H={H},template centroid={tempcog}')
+        # print(f'corners={corners,[corners]}')
+        # compute angles and side length of polygon
+        vertice_angles = []
+        side_lengths = []
+        nb_corners = len(corners)
+        for i in range(nb_corners):
+            # side lengths
+            p1 = corners[i]
+            p2 = corners[(i + 1) % nb_corners]  
+            sidelen = np.linalg.norm(p2 - p1)
+            side_lengths.append(sidelen)
+            # angles
+            p_prev = corners[(i - 1) % nb_corners]  # Previous corner
+            p_curr = p1
+            p_next = p2
+            v1 = p_prev - p_curr
+            v2 = p_next - p_curr
+            dot_product = np.dot(v1, v2)
+            magnitude_v1 = np.linalg.norm(v1)
+            magnitude_v2 = np.linalg.norm(v2)
+            cosine_angle = dot_product / (magnitude_v1 * magnitude_v2)
+            angle_rad = np.arccos(np.clip(cosine_angle, -1.0, 1.0)) #clip to handle floating point errors
+            angle_deg = np.degrees(angle_rad)
+            vertice_angles.append(angle_deg)
 
-        cv.circle(vis,tempcog,10,(200,0,0),-1,)
-        print(f'H={H},template centroid={tempcog}')
+        print(f'angles = {vertice_angles}, side lenght = {side_lengths}')
+        # don't use the right up bounding rectangle anymore
+        # x, y, w, h = cv.boundingRect(corners)
+        # cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        # tempcog = (int(x+w/2),int(y+h/2))
+        tl_corner_x = np.min(corners[:,0])
+        tl_corner_y = np.min(corners[:,1])
+        avg_side1 = (side_lengths[0]+side_lengths[2]) /2
+        avg_side2 = (side_lengths[1]+side_lengths[3]) /2
+        poly_h = max(avg_side1,avg_side2) # assumes h > w !
+        poly_w = min(avg_side1,avg_side2)
+        cog_x = int(tl_corner_x + poly_w/2)
+        cog_y = int(tl_corner_y + poly_h/2)
+        # centroid from 
+        # https://stackoverflow.com/a/75699662/6358973
+        if nb_corners >=3:
+            polygon2 = np.roll(corners, -1, axis=0)
+            signed_areas = 0.5 * np.cross(corners, polygon2)
+            centroids = (corners + polygon2) / 3.0
+            # tempcog = (cog_x,cog_y)
+            if np.all(np.asarray(vertice_angles) < 105.0) and np.all(np.asarray(vertice_angles) > 75.0):
+                if np.all(np.asarray(side_lengths) < 130) and np.all(np.asarray(side_lengths) > 30):
+                    centroid = np.average(centroids, axis=0, weights=signed_areas)
+                    tempcog = (int(centroid[0]),int(centroid[1])) 
+                    cv.circle(vis,tempcog,10,(200,0,0),-1)
         
     # cv.imshow(win, vis)
     return vis,tempcog
