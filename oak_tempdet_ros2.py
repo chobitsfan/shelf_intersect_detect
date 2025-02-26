@@ -30,11 +30,11 @@ class ImageSubscriber(Node):
             Image,
             '/mono_left',
             self.image_callback,
-            10)
+            1)
         self.publisher = self.create_publisher(
             Image,
             '/templatematch_image',  # Publish the image with template to a new topic
-            10)
+            1)
         self.point_publisher = self.create_publisher(
             Point,
             '/templateCOG',  # template Center of Gravity
