@@ -54,11 +54,36 @@ class ImageSubscriber(Node):
         fn1 = 'cropped_image.png'
 
         self.templt_img = cv.imread(cv.samples.findFile(fn1), cv.IMREAD_GRAYSCALE)
-        feature_name = 'sift'
-        self.detector = cv.SIFT_create()
-        norm = cv.NORM_L2
-        flann_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+        feature_name = 'orb-flann'
+        # feature_name = 'sift'
+        if feature_name == 'sift':
+            self.detector = cv.SIFT_create()
+            norm = cv.NORM_L2
+            flann_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+        else:
+            scoreType = cv.ORB_HARRIS_SCORE
+            self.detector = cv.ORB_create(edgeThreshold=10, patchSize=31, 
+                                     nlevels=8, fastThreshold=20, 
+                                     scaleFactor=1.2, WTA_K=2,
+                                     scoreType=scoreType,
+                                     firstLevel=0, nfeatures=5000)
+            # detector = cv.ORB_create(400)
+            # check the ORB parameters
+            # for attribute in dir(detector):
+            #     if not attribute.startswith("get"):
+            #         continue
+            #     param = attribute.replace("get", "")
+            #     get_param = getattr(backend, attribute)
+            #     val = get_param()
+            #     print(f'param= {val}')
+            norm = cv.NORM_HAMMING
+            flann_params= dict(algorithm = FLANN_INDEX_LSH,
+                               table_number = 6, # 12
+                               key_size = 12,     # 20
+                               multi_probe_level = 1) #2
         self.matcher = cv.FlannBasedMatcher(flann_params, {})  
+        # self.matcher = cv.BFMatcher(norm)
+
 
         if self.templt_img is None:
             print('Failed to load fn1:', fn1)
@@ -97,7 +122,8 @@ class ImageSubscriber(Node):
 
                 def match_and_draw(win):
                     raw_matches = self.matcher.knnMatch(self.desc1, trainDescriptors = desc2, k = 2) #2
-                    p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches)
+                    # p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches)
+                    p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches,ratio = 0.9)
                     if len(p1) >= 4:
                         H, status = cv.findHomography(p1, p2, cv.RANSAC, 5.0)
                         # uncomment to show nb of inliers and matched features
@@ -181,7 +207,13 @@ def init_feature(name):
         detector = cv.xfeatures2d.SURF_create(800)
         norm = cv.NORM_L2
     elif chunks[0] == 'orb':
-        detector = cv.ORB_create(400)
+        # detector = cv.ORB_create(400)
+        scoreType = cv.ORB_HARRIS_SCORE
+        detector = cv.ORB_create(edgeThreshold=10, patchSize=31, 
+                                 nlevels=8, fastThreshold=20, 
+                                 scaleFactor=1.2, WTA_K=2,
+                                 scoreType=scoreType,
+                                 firstLevel=0, nfeatures=5000)
         norm = cv.NORM_HAMMING
     elif chunks[0] == 'akaze':
         detector = cv.AKAZE_create()
@@ -302,10 +334,11 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
             centroids = (corners + polygon2) / 3.0
             # tempcog = (cog_x,cog_y)
             if np.all(np.asarray(vertice_angles) < 105.0) and np.all(np.asarray(vertice_angles) > 75.0):
-                if np.all(np.asarray(side_lengths) < 130) and np.all(np.asarray(side_lengths) > 30):
-                    centroid = np.average(centroids, axis=0, weights=signed_areas)
-                    tempcog = (int(centroid[0]),int(centroid[1])) 
-                    cv.circle(vis,tempcog,10,(200,0,0),-1)
+                # if np.all(np.asarray(side_lengths) < 80) and np.all(np.asarray(side_lengths) > 20):
+                # if np.all(np.asarray(side_lengths) < 200) and np.all(np.asarray(side_lengths) > 40):
+                centroid = np.average(centroids, axis=0, weights=signed_areas)
+                tempcog = (int(centroid[0]),int(centroid[1])) 
+                cv.circle(vis,tempcog,10,(200,0,0),-1)
         
     # cv.imshow(win, vis)
     return vis,tempcog

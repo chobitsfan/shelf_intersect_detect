@@ -19,14 +19,21 @@ pipeline = dai.Pipeline()
 monoLeft = pipeline.create(dai.node.MonoCamera)
 xoutLeft = pipeline.create(dai.node.XLinkOut)
 
+manip = pipeline.create(dai.node.ImageManip)
+manip.initialConfig.setResize(320, 240)
+
 xoutLeft.setStreamName('left')
 
 # Properties
 monoLeft.setCamera("left")
 monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_480_P)
+# monoLeft.setIspScale(1, 2)
 
 # Linking
-monoLeft.out.link(xoutLeft.input)
+monoLeft.out.link(manip.inputImage)
+manip.out.link(xoutLeft.input)
+# monoLeft.out.link(xoutLeft.input)
+
 
 # Connect to device and start pipeline
 with dai.Device(pipeline) as device:
@@ -45,6 +52,7 @@ with dai.Device(pipeline) as device:
         img.header = header
         img.height = inLeft.getHeight()
         img.width = inLeft.getWidth()
+        print(img.height,img.width)
         img.is_bigendian = 0
         img.encoding = "mono8"
         img.step = inLeft.getWidth()
