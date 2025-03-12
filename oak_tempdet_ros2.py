@@ -7,6 +7,7 @@
 # the published image with template is published and can be seen in rviz with topic
 # templatematch_image
 # added: publish the centroid of the detected template ROI (both as Point and PointStamped)
+# added margin at the border of the image to reduce template search ROI 
 
 import cv2 as cv
 # import depthai as dai
@@ -116,12 +117,17 @@ class ImageSubscriber(Node):
 
             if cv_image is not None and not cv_image.size == 0: # Check if image is valid
                                                                 # if so run the template detector
-                kp2, desc2 = self.detector.detectAndCompute(cv_image, None)
+                # use reduced ROI
+                margn = 100
+                cv_image_roi = cv_image[margn:height - margn,margn:width-margn]
+                kp2, desc2 = self.detector.detectAndCompute(cv_image_roi, None)
+                # kp2, desc2 = self.detector.detectAndCompute(cv_image, None)
 
                 # uncomment to show nb of features in the template
                 # print('self.templt_img - %d features' % (len(self.kp1)))
 
-                def match_and_draw(win):
+                def match_and_draw(win,margin=50):
+                # def match_and_draw(win):
                     raw_matches = self.matcher.knnMatch(self.desc1, trainDescriptors = desc2, k = 2) #2
                     # p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches)
                     p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches,ratio = 0.9)
@@ -133,12 +139,15 @@ class ImageSubscriber(Node):
                         H, status = None, None
                         print('%d matches found, not enough for homography estimation' % len(p1))
 
-                    _vis, _tempcog = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
+                    _vis, _tempcog = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H,margin = margn)
+                    # _vis, _tempcog = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
+                    # cv.imshow('win',cv_image_roi)
                     if win is not None:
                         cv.imshow(win, _vis)
                     return _vis, _tempcog
 
-                tempmatchimg,tempcog = match_and_draw(self.cv_window_name)
+                tempmatchimg,tempcog = match_and_draw(self.cv_window_name,margin=margn)
+                # tempmatchimg,tempcog = match_and_draw(self.cv_window_name)
 
                 # new ROS Image message following Chobits' model
                 new_msg = Image()
@@ -250,7 +259,7 @@ def filter_matches(kp1, kp2, matches, ratio = 0.75):
     kp_pairs = zip(mkp1, mkp2)
     return p1, p2, list(kp_pairs)
 
-def explore_match_simple(win, img1, img2, kp_pairs, H = None):
+def explore_match_simple(win, img1, img2, kp_pairs, H = None,margin=50):
     '''
     Simplified version of simple match, without mouse interaction 
     and only show a polyline if the template was found.
@@ -258,12 +267,11 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
     img1 : template
     img2: target image
     H: result of findHomography
+    margin
     return the visible image with template drown and the centroid (COG) of the template
     '''
     h1, w1 = img1.shape[:2]
     h2, w2 = img2.shape[:2]
-    #vis = np.zeros(h2,w2, np.uint8)
-    #vis = img2
     asp_ratio = h1/w1 # aspect ratio of the input template image
     min_asp_ratio,max_asp_ratio = 0.9 * asp_ratio, 1.1*asp_ratio # min and max acceptable  aspect ratio
     min_h1,max_h1 = 70,150 # maximum apparent height of the tmplate in the image
@@ -276,7 +284,8 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
     tempcog = None
     if H is not None:
         corners = np.float32([[0, 0], [w1, 0], [w1, h1], [0, h1]])
-        corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2)  )
+        corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2)  ) + margin
+        # corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2)  )
         cv.polylines(vis, [corners], True, (0, 255, 0),3)
         # x, y, w, h = cv.boundingRect(corners)
         # print(f'bng rect ={x,y,w,h} ')
@@ -314,7 +323,7 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
             angle_deg = np.degrees(angle_rad)
             vertice_angles.append(angle_deg)
 
-        print(f'angles = {vertice_angles}, side lenght = {side_lengths}')
+        print(f'angles = {vertice_angles}, side length = {side_lengths}')
         # don't use the right up bounding rectangle anymore
         # x, y, w, h = cv.boundingRect(corners)
         # cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
