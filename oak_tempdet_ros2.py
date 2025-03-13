@@ -126,7 +126,7 @@ class ImageSubscriber(Node):
                 # uncomment to show nb of features in the template
                 # print('self.templt_img - %d features' % (len(self.kp1)))
 
-                def match_and_draw(win,margin=50):
+                def match_and_draw(win,margin=0):
                 # def match_and_draw(win):
                     raw_matches = self.matcher.knnMatch(self.desc1, trainDescriptors = desc2, k = 2) #2
                     # p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches)
@@ -259,7 +259,7 @@ def filter_matches(kp1, kp2, matches, ratio = 0.75):
     kp_pairs = zip(mkp1, mkp2)
     return p1, p2, list(kp_pairs)
 
-def explore_match_simple(win, img1, img2, kp_pairs, H = None,margin=50):
+def explore_match_simple(win, img1, img2, kp_pairs, H = None,margin=0):
     '''
     Simplified version of simple match, without mouse interaction 
     and only show a polyline if the template was found.
