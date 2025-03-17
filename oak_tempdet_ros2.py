@@ -118,7 +118,7 @@ class ImageSubscriber(Node):
             if cv_image is not None and not cv_image.size == 0: # Check if image is valid
                                                                 # if so run the template detector
                 # use reduced ROI
-                margn = 100
+                margn = 0
                 cv_image_roi = cv_image[margn:height - margn,margn:width-margn]
                 kp2, desc2 = self.detector.detectAndCompute(cv_image_roi, None)
                 # kp2, desc2 = self.detector.detectAndCompute(cv_image, None)
