@@ -86,7 +86,7 @@ with dai.Device(pipeline) as device:
         img.width = inRGB.getWidth()
         # print(img.height,img.width)
         img.is_bigendian = 0
-        img.encoding = "rgb8"
+        img.encoding = "bgr8"
         img.step = inRGB.getWidth()
         img.data = frame.ravel()
         img_rgb_pub.publish(img)
