@@ -48,7 +48,8 @@ with dai.Device(pipeline) as device:
         img.is_bigendian = 0
         img.encoding = "mono8"
         img.step = inLeft.getWidth()
-        img.data = frame.ravel()
+        img.data = frame.tobytes()
+        # img.data = frame.ravel()
         img_pub.publish(img)
 
 rclpy.shutdown()
