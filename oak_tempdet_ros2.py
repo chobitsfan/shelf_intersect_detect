@@ -6,7 +6,8 @@
 # in another terminal or tab in tmux, run the publisher with template detection (this file):
 # the published image with template is published and can be seen in rviz with topic
 # templatematch_image
-
+# added: publish the centroid of the detected template ROI (both as Point and PointStamped)
+# added margin at the border of the image to reduce template search ROI 
 
 import cv2 as cv
 # import depthai as dai
@@ -15,6 +16,8 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import Header
 import numpy as np
+# for point cloud
+from geometry_msgs.msg import Point,PointStamped
 import os
 
 # import sys, getopt # no more needed 
@@ -28,23 +31,61 @@ class ImageSubscriber(Node):
             Image,
             '/mono_left',
             self.image_callback,
-            10)
+            1)
         self.publisher = self.create_publisher(
             Image,
             '/templatematch_image',  # Publish the image with template to a new topic
+            1)
+        self.point_publisher = self.create_publisher(
+            Point,
+            '/templateCOG',  # template Center of Gravity
             10)
+        self.pointstamped_pub = self.create_publisher(
+            PointStamped,
+            '/templateCOG_stampd',  # template Center of Gravity
+            10)
+        # self.timer_ = self.create_timer(1.0,self.image_callback)
+        self.seq = 0
         if 'DISPLAY' in os.environ:
             self.cv_window_name = "templateImage"
             cv.namedWindow(self.cv_window_name, cv.WINDOW_NORMAL)  # Allow resizing
         else:
             self.cv_window_name = None
-        fn1 = '10x18cm_at_d_90cm.png'
+        # fn1 = '10x18cm_at_d_90cm.png'
+        fn1 = 'yangmei_printed.png'
+        # fn1 = 'cropped_image.png'
+
         self.templt_img = cv.imread(cv.samples.findFile(fn1), cv.IMREAD_GRAYSCALE)
-        feature_name = 'sift'
-        self.detector = cv.SIFT_create()
-        norm = cv.NORM_L2
-        flann_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+        feature_name = 'orb-flann'
+        # feature_name = 'sift'
+        if feature_name == 'sift':
+            self.detector = cv.SIFT_create()
+            norm = cv.NORM_L2
+            flann_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+        else:
+            scoreType = cv.ORB_HARRIS_SCORE
+            self.detector = cv.ORB_create(edgeThreshold=10, patchSize=31, 
+                                     nlevels=8, fastThreshold=20, 
+                                     scaleFactor=1.2, WTA_K=2,
+                                     scoreType=scoreType,
+                                     firstLevel=0, nfeatures=5000)
+            # detector = cv.ORB_create(400)
+            # check the ORB parameters
+            # for attribute in dir(detector):
+            #     if not attribute.startswith("get"):
+            #         continue
+            #     param = attribute.replace("get", "")
+            #     get_param = getattr(backend, attribute)
+            #     val = get_param()
+            #     print(f'param= {val}')
+            norm = cv.NORM_HAMMING
+            flann_params= dict(algorithm = FLANN_INDEX_LSH,
+                               table_number = 6, # 12
+                               key_size = 12,     # 20
+                               multi_probe_level = 1) #2
         self.matcher = cv.FlannBasedMatcher(flann_params, {})  
+        # self.matcher = cv.BFMatcher(norm)
+
 
         if self.templt_img is None:
             print('Failed to load fn1:', fn1)
@@ -52,7 +93,9 @@ class ImageSubscriber(Node):
         if self.detector is None:
             print('unknown feature:', feature_name)
             sys.exit(1)
+        # self.tempcog = np.array([[1.0,2.0,3.0]],dtype=np.float32)
 
+        # TODO: return template COG 
         self.kp1, self.desc1 = self.detector.detectAndCompute(self.templt_img, None)
 
     def image_callback(self, msg):
@@ -74,14 +117,20 @@ class ImageSubscriber(Node):
 
             if cv_image is not None and not cv_image.size == 0: # Check if image is valid
                                                                 # if so run the template detector
-                kp2, desc2 = self.detector.detectAndCompute(cv_image, None)
+                # use reduced ROI
+                margn = 0
+                cv_image_roi = cv_image[margn:height - margn,margn:width-margn]
+                kp2, desc2 = self.detector.detectAndCompute(cv_image_roi, None)
+                # kp2, desc2 = self.detector.detectAndCompute(cv_image, None)
 
                 # uncomment to show nb of features in the template
                 # print('self.templt_img - %d features' % (len(self.kp1)))
 
-                def match_and_draw(win):
+                def match_and_draw(win,margin=0):
+                # def match_and_draw(win):
                     raw_matches = self.matcher.knnMatch(self.desc1, trainDescriptors = desc2, k = 2) #2
-                    p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches)
+                    # p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches)
+                    p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches,ratio = 0.9)
                     if len(p1) >= 4:
                         H, status = cv.findHomography(p1, p2, cv.RANSAC, 5.0)
                         # uncomment to show nb of inliers and matched features
@@ -90,11 +139,15 @@ class ImageSubscriber(Node):
                         H, status = None, None
                         print('%d matches found, not enough for homography estimation' % len(p1))
 
-                    _vis = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
-                    cv.imshow(win, _vis)
-                    return _vis
+                    _vis, _tempcog = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H,margin = margn)
+                    # _vis, _tempcog = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
+                    # cv.imshow('win',cv_image_roi)
+                    if win is not None:
+                        cv.imshow(win, _vis)
+                    return _vis, _tempcog
 
-                tempmatchimg = match_and_draw(self.cv_window_name)
+                tempmatchimg,tempcog = match_and_draw(self.cv_window_name,margin=margn)
+                # tempmatchimg,tempcog = match_and_draw(self.cv_window_name)
 
                 # new ROS Image message following Chobits' model
                 new_msg = Image()
@@ -106,7 +159,36 @@ class ImageSubscriber(Node):
                 new_msg.data = tempmatchimg.tobytes() # Convert to bytes
 
                 self.publisher.publish(new_msg)
-                cv.waitKey(1)
+
+                # publish the template COG as a geometry_msgs
+                # add fake depth(for testing function) to point tempcog
+                # publish only if a valid COG is found
+                if tempcog is not None:
+                    tempcog3d = [float(tempcog[0]/100.0), float(tempcog[1]/100.0),1.0]
+                    # tempcog3d = np.array([[1.0,2.0,3.0]],dtype=np.float32) # for test
+                    print(f'tempcog = {tempcog}, template_COG = {tempcog3d}')
+                    # point stamped to show in rviz2
+                    pointstamped_msg = PointStamped()
+                    pointstamped_msg.header = Header()
+                    # pointstamped_msg.header.stamp = self.get_clock().now().to_msg()
+                    pointstamped_msg.header.frame_id = 'map'
+                    # pointstamped_msg.header.seq = self.seq
+                    pointstamped_msg.point.x = tempcog3d[0]
+                    pointstamped_msg.point.y = tempcog3d[1]
+                    pointstamped_msg.point.z = tempcog3d[2]
+                    self.pointstamped_pub.publish(pointstamped_msg)
+                    self.get_logger().info(f" template COG stamped: x,y,z = {pointstamped_msg.point.x,pointstamped_msg.point.y,pointstamped_msg.point.z}")
+                    # simple point (seems can't be shown in rviz)
+                    point_msg = Point()
+                    point_msg.x = tempcog3d[0]
+                    point_msg.y = tempcog3d[1]
+                    point_msg.z = tempcog3d[2]
+                    self.point_publisher.publish(point_msg)
+                    self.get_logger().info(f" template COG: x = {point_msg.x,point_msg.y,point_msg.z}")
+                else:
+                    self.get_logger().info(f"no valide template COG")
+                if self.cv_window_name is not None:
+                    cv.waitKey(1)
             else:
                 self.get_logger().error("Could not create OpenCV image. Check encoding and data.")
 
@@ -135,7 +217,13 @@ def init_feature(name):
         detector = cv.xfeatures2d.SURF_create(800)
         norm = cv.NORM_L2
     elif chunks[0] == 'orb':
-        detector = cv.ORB_create(400)
+        # detector = cv.ORB_create(400)
+        scoreType = cv.ORB_HARRIS_SCORE
+        detector = cv.ORB_create(edgeThreshold=10, patchSize=31, 
+                                 nlevels=8, fastThreshold=20, 
+                                 scaleFactor=1.2, WTA_K=2,
+                                 scoreType=scoreType,
+                                 firstLevel=0, nfeatures=5000)
         norm = cv.NORM_HAMMING
     elif chunks[0] == 'akaze':
         detector = cv.AKAZE_create()
@@ -171,7 +259,7 @@ def filter_matches(kp1, kp2, matches, ratio = 0.75):
     kp_pairs = zip(mkp1, mkp2)
     return p1, p2, list(kp_pairs)
 
-def explore_match_simple(win, img1, img2, kp_pairs, H = None):
+def explore_match_simple(win, img1, img2, kp_pairs, H = None,margin=0):
     '''
     Simplified version of simple match, without mouse interaction 
     and only show a polyline if the template was found.
@@ -179,24 +267,91 @@ def explore_match_simple(win, img1, img2, kp_pairs, H = None):
     img1 : template
     img2: target image
     H: result of findHomography
+    margin
+    return the visible image with template drown and the centroid (COG) of the template
     '''
     h1, w1 = img1.shape[:2]
     h2, w2 = img2.shape[:2]
-    #vis = np.zeros(h2,w2, np.uint8)
-    #vis = img2
+    asp_ratio = h1/w1 # aspect ratio of the input template image
+    min_asp_ratio,max_asp_ratio = 0.9 * asp_ratio, 1.1*asp_ratio # min and max acceptable  aspect ratio
+    min_h1,max_h1 = 70,150 # maximum apparent height of the tmplate in the image
+    min_corner_angle,max_corner_angle = 70,110 # min and maximum acceptable angles of the corners of the matched template polygone
+
     vis = cv.cvtColor(img2, cv.COLOR_GRAY2BGR)
     
     # draw polyline around detected match in the target image
-    # TODO: simply draw a rectangle
+    # simply draw a rectangle
+    tempcog = None
     if H is not None:
-        print(f'H={H}')
         corners = np.float32([[0, 0], [w1, 0], [w1, h1], [0, h1]])
-        corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2)  )
+        corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2)  ) + margin
+        # corners = np.int32( cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2)  )
         cv.polylines(vis, [corners], True, (0, 255, 0),3)
-        x, y, w, h = cv.boundingRect(corners)
-        cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        # x, y, w, h = cv.boundingRect(corners)
+        # print(f'bng rect ={x,y,w,h} ')
+        # cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2) # keep here for debg for now
+        # if (h > min_h1) and (h < max_h1):
+        #     if (w >  min_h1 / asp_ratio) and  (w < max_h1 / asp_ratio): 
+        #         # if (h/w > min_asp_ratio) and (h/w < max_asp_ratio):
+        #             # tempcog = (int(x+w/2),int(y+h/2))
+        #         tempcog = (int(x+w/2),int(y+h/2))
+        #
+        # cv.circle(vis,tempcog,10,(200,0,0),-1,)
+        # print(f'H={H},template centroid={tempcog}')
+        # print(f'corners={corners,[corners]}')
+        # compute angles and side length of polygon
+        vertice_angles = []
+        side_lengths = []
+        nb_corners = len(corners)
+        for i in range(nb_corners):
+            # side lengths
+            p1 = corners[i]
+            p2 = corners[(i + 1) % nb_corners]  
+            sidelen = np.linalg.norm(p2 - p1)
+            side_lengths.append(sidelen)
+            # angles
+            p_prev = corners[(i - 1) % nb_corners]  # Previous corner
+            p_curr = p1
+            p_next = p2
+            v1 = p_prev - p_curr
+            v2 = p_next - p_curr
+            dot_product = np.dot(v1, v2)
+            magnitude_v1 = np.linalg.norm(v1)
+            magnitude_v2 = np.linalg.norm(v2)
+            cosine_angle = dot_product / (magnitude_v1 * magnitude_v2)
+            angle_rad = np.arccos(np.clip(cosine_angle, -1.0, 1.0)) #clip to handle floating point errors
+            angle_deg = np.degrees(angle_rad)
+            vertice_angles.append(angle_deg)
+
+        print(f'angles = {vertice_angles}, side length = {side_lengths}')
+        # don't use the right up bounding rectangle anymore
+        # x, y, w, h = cv.boundingRect(corners)
+        # cv.rectangle(vis, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        # tempcog = (int(x+w/2),int(y+h/2))
+        tl_corner_x = np.min(corners[:,0])
+        tl_corner_y = np.min(corners[:,1])
+        avg_side1 = (side_lengths[0]+side_lengths[2]) /2
+        avg_side2 = (side_lengths[1]+side_lengths[3]) /2
+        poly_h = max(avg_side1,avg_side2) # assumes h > w !
+        poly_w = min(avg_side1,avg_side2)
+        cog_x = int(tl_corner_x + poly_w/2)
+        cog_y = int(tl_corner_y + poly_h/2)
+        # centroid from 
+        # https://stackoverflow.com/a/75699662/6358973
+        if nb_corners >=3:
+            polygon2 = np.roll(corners, -1, axis=0)
+            signed_areas = 0.5 * np.cross(corners, polygon2)
+            centroids = (corners + polygon2) / 3.0
+            # tempcog = (cog_x,cog_y)
+            if np.all(np.asarray(vertice_angles) < 105.0) and np.all(np.asarray(vertice_angles) > 75.0):
+                # if np.all(np.asarray(side_lengths) < 80) and np.all(np.asarray(side_lengths) > 20):
+                # if np.all(np.asarray(side_lengths) < 200) and np.all(np.asarray(side_lengths) > 40):
+                centroid = np.average(centroids, axis=0, weights=signed_areas)
+                tempcog = (int(centroid[0]),int(centroid[1])) 
+                cv.circle(vis,tempcog,10,(200,0,0),-1)
+        
     # cv.imshow(win, vis)
-    return vis
+    return vis,tempcog
     
 
 def main(args=None):

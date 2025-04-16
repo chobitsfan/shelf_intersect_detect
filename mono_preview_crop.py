@@ -31,6 +31,7 @@ def mouse_callback(event, x, y, flags, param):
         drawing = False
         cropping = True
         roi_points.append((x, y))
+        cv2.putText(frame, f'c:crop r:reset',(20,30), cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 0), thickness = 2, lineType=cv2.LINE_AA)
         cv2.rectangle(frame, roi_points[0], roi_points[1], (0, 255, 0), 2)
         cv2.imshow("Mono Camera", frame)
 
@@ -69,8 +70,8 @@ with dai.Device(pipeline) as device:
         left_frame = left_queue.get().getCvFrame()
         right_frame = right_queue.get().getCvFrame()
 
-        # Display the left frame (you can choose right or both)
-        frame = left_frame.copy() # Make a copy to avoid modifying the original
+        # Display the left frame (can choose right or both)
+        frame = left_frame.copy() # copy to avoid modifying the original
 
         if not drawing and not cropping:
             cv2.imshow("Mono Camera", left_frame)
