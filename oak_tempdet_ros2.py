@@ -259,6 +259,7 @@ def filter_matches(kp1, kp2, matches, ratio = 0.75):
     kp_pairs = zip(mkp1, mkp2)
     return p1, p2, list(kp_pairs)
 
+# TODO: seems win is not used here, cleanup
 def explore_match_simple(win, img1, img2, kp_pairs, H = None,margin=0):
     '''
     Simplified version of simple match, without mouse interaction 
