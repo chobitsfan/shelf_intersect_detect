@@ -8,10 +8,7 @@
 # usage 
 # run either mono_preview_pub.py to get a live image from the oak,
 # or play a relevant rosbag, for example:
-# ros2 bag play first_good_test_16042025/rosbag2_2025_04_16-10_22_10/
-# 
-# TODO to adjust proper filter or threshold, 
-# tbd
+# ros2 bag play rosbag2_2025_04_16-10_22_10/
 
 import cv2 as cv
 import rclpy
@@ -28,7 +25,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 import os
 import sys
 
-from scipy import ndimage  # for max filter
+from scipy import ndimage  # for max and min filter
 sys.path.insert(0, '/home/pi/Programs/warehouse_nav/lines_and_template')
 # sys.path.insert(0, '/home/pi/Programs/warehouse_nav/lines_and_template')
 
@@ -48,18 +45,10 @@ class ImageSubscriber(Node):
             # 1)
         self.publisher = self.create_publisher(
             Image,
-            '/templatematch_image',  # Publish the image with template to a new topic
+            '/vert_line_det_img',  
             1)
-        self.point_publisher = self.create_publisher(
-            Point,
-            '/templateCOG',  # template Center of Gravity
-            10)
-        self.pointstamped_pub = self.create_publisher(
-            PointStamped,
-            '/templateCOG_stampd',  # template Center of Gravity
-            10)
-        self.polygon_publisher_ = self.create_publisher(Polygon, 'line_polygon', 10)
-        self.marker_publisher_ = self.create_publisher(Marker, 'line_marker', 10)
+        self.polygon_publisher_ = self.create_publisher(Polygon, 'vert_line_polygon', 10)
+        self.marker_publisher_ = self.create_publisher(Marker, 'vert_line_marker', 10)
         # self.timer_ = self.create_timer(1.0,self.image_callback)
         self.seq = 0
         if 'DISPLAY' in os.environ:
@@ -83,6 +72,7 @@ class ImageSubscriber(Node):
         # line_points= [[0.0, 0.0, 0.0], [2.0, 1.0, 0.0]]
         # line_points_numpy = np.array([[0.0, -1.0, 0.0], [2.0, 0.0, 0.0]])
 
+        print(f'in publish_line:{line_points, line_points[0], line_points[0][0]}')
         polygon_msg_list = Polygon()
         if len(line_points) == 2:
             p1 = Point32(x=float(line_points[0][0]), y=float(line_points[0][1]), z=float(line_points[0][2]))
@@ -116,45 +106,27 @@ class ImageSubscriber(Node):
         marker_msg.id = 0
         marker_msg.type = Marker.LINE_STRIP
         marker_msg.action = Marker.ADD
-        marker_msg.lifetime.sec = 0
+        marker_msg.lifetime.sec = 0.1
 
         marker_msg.scale.x = 0.05  # Line width
         marker_msg.color = ColorRGBA(r=0.0, g=1.0, b=0.0, a=1.0)  # Green line
         # temprrary trick to scale pixels to world coordinate
-        # TODO: convert to point cloud!
+        # TODO: ccould onvert to point cloud
         pix_to_m = 0.01
 
         if len(points) == 2:
-            # p1 = Point(x=float(points[0][0]), y=float(points[0][1]), z=float(0))
-            # p2 = Point(x=float(points[1][0]), y=float(points[1][1]), z=float(0))
-            p1 = Point(x=float(points[0][0]*pix_to_m), y=float(points[0][1]*pix_to_m), z=float(0))
-            p2 = Point(x=float(points[1][0]*pix_to_m), y=float(points[1][1]*pix_to_m), z=float(0))
-            # p1 = Point(x=float(points[0][0]), y=float(points[0][1]), z=float(points[0][2]))
-            # p2 = Point(x=float(points[1][0]), y=float(points[1][1]), z=float(points[1][2]))
+            # reorder so that the line appears as a vertical line in rviz
+            # pixel px,py -> rviz x,y,z = value,px,py
+            # the polygon is unchanged (screen px,py)
+            # p1 = Point(x=float(points[0][0]*pix_to_m), y=float(points[0][1]*pix_to_m), z=float(0))
+            # p2 = Point(x=float(points[1][0]*pix_to_m), y=float(points[1][1]*pix_to_m), z=float(0))
+            p1 = Point(x=float(1.0), y=float(points[0][0]*pix_to_m), z=float(points[0][1]*pix_to_m))
+            p2 = Point(x=float(1.0), y=float(points[1][0]*pix_to_m), z=float(points[1][1]*pix_to_m))
             marker_msg.points = [p1, p2]
         else:
-            self.get_logger().warn("Input should be a list of two points to visualize a line.")
+            self.get_logger().warn("Need a list of two points.")
 
         return marker_msg
-
-    # compute the line origin at the image border
-    # takes a line_mll structure, size of image
-    # use a margin so that point is displayed (could be done outside)
-    def line_orig(self,line_mll,W,H):
-        marg_px = 5
-    #    marg = marg_px # in pixels, attention to the equivalent in normlized points when setting the ROI
-        a,b,c=line_mll[4],line_mll[5],line_mll[6]
-        y=H - marg_px
-        x = -1/a*(b*H+c)
-        if x>W:
-            # need to use the width
-            x = W - marg_px
-            y = -1/b*(a*W+c)
-        if x<0:
-            # need to set to 0 + margin
-            x =  marg_px
-            y = -1/b*(a*W+c)
-        return np.asarray([int(x),int(y)])
 
     def image_callback(self, msg):
         try:
@@ -184,85 +156,51 @@ class ImageSubscriber(Node):
                 frameLeftColor= cv.cvtColor(cv_image, cv.COLOR_GRAY2BGR)
                 if do_maxfilt:
                     cv_image = ndimage.maximum_filter(cv_image, size=10)
-                    # cv.imshow('max filter ', cv_image)
                 if do_minfilt:
                     cv_image = ndimage.minimum_filter(cv_image, size=5)
-                    # cv.imshow('min filter ', cv_image)
                 # keep only dark Sectionss
                 if do_thresh:
                     thresh = 70 # grey level 
                     cv_image [cv_image >= thresh] = 255
                     cv_image [cv_image <thresh] = 0
-                    # cv.imshow('thresholded ', cv_image)
+                    # ret, binary = cv.threshold(cv_image, 60, 255, 
                 # denoise
                 if do_denoise:
                     ksz = 5
                     kernel = np.ones((ksz,ksz),np.uint8)
                     # cv_image = cv.dilate(cv_image,kernel,iterations=1)
                     cv_image = cv.erode(cv_image,kernel,iterations=2)
-                # cv_image = cv.morphologyEx(cv_image,cv.MORPH_OPEN,kernel)
                 do_contour_det = True
 
                 if do_contour_det:
                     # Convert the grayscale image to binary
-                    # ret, binary = cv.threshold(cv_image, 60, 255, 
                       # cv.THRESH_OTSU)
                     binary = cv_image.copy()
-                    # cv.imshow('binary image', binary)
                     # need black bg to detect object contours
                     # so we invert the image
                     inverted_binary = ~binary
-                    # cv.imshow('Inverted binary image', inverted_binary)
-                    # Find the contours on the inverted binary image, and store them in a list
-                    # Contours are drawn around white blobs.
+                    # get contours on the inverted binary image
+                    # Contours are around WHITE blobs.
                     # hierarchy variable contains info on the relationship between the contours
                     contours, hierarchy = cv.findContours(inverted_binary,
                       cv.RETR_TREE,
                       cv.CHAIN_APPROX_SIMPLE)
-                    # with_contours = cv.drawContours(frameLeftColor, contours, -1,(255,0,255),3)
-                    # cv.imshow('Detected contours', with_contours)
-                    # Show the total number of contours that were detected
-                    print('Total number of contours detected: ' + str(len(contours)))
-                    # Draw a bounding box around all contours
+                    # lspt1, lspt2 = None, None
+                    line_points = None
                     for c in contours:
                       x, y, w, h = cv.boundingRect(c)
                      
-                        # select contour by areay or height...
+                    # select contour by areay or height...
                       if h > 150 and (w > 50 and w < 100):
                       # if (cv.contourArea(c)) > 10:
-                        # cv.rectangle(frameLeftColor,(x,y), (x+w,y+h), (0,255,0), 5)
-                        lspt1 = (x+w//2,0)
-                        lspt2 = (x+w//2,h)
-                        cv.line(frameLeftColor,lspt1,lspt2,(255,0,0),5)
-                    # cv.imshow('All contours with bounding box', with_contours)
-                             
-                print(f'before: cv_image.shape={cv_image.shape}') 
-                linesLeft = self.lsd.detect(inverted_binary)[0] 
-                # linesLeft = self.lsd.detect(cv_image)[0] 
-                print(f'after: len(linesLeft) = {len(linesLeft)}') 
-                linesLeft = mll.from_lsd(linesLeft)
-
-                # filter out the short segments
-                linesLeft = linesLeft[linesLeft[...,7] > self.min_line_length]
-                # filter out lines within 90° +/- chosen angle
-                ab = linesLeft[..., 4:6] * np.array([1, -1]) # coefficient a,b -> normal vector to line
-                scal = np.matmul(ab, self.up).reshape(-1)
-                #print(scal)
-                #print(self.v_cos_tol0,self.v_cos_tol1)
-                linesV = linesLeft[(np.abs(scal) < (self.v_cos_tol0)) & (np.abs(scal) > (self.v_cos_tol1))]
-                print(f'after filter length: len(linesLeft) = {len(linesLeft)}') 
-
-                # if len(linesLeft) is not None:
-                if len(linesV) > 5: # is not None:
-                    ptc_1 = self.line_orig(linesV[0],frameLeftColor.shape[1],frameLeftColor.shape[0])
-                    ptc_2 = self.line_orig(linesV[2],frameLeftColor.shape[1],frameLeftColor.shape[0])
-                    # print(f'ptc_1 = {ptc_1}, ptc_2 = {ptc_2}')
-                    self.get_logger().info(f" vertical line: x = {ptc_1,ptc_2}")
-                    # frameLeftColor= cv.cvtColor(cv_image, cv.COLOR_GRAY2BGR)
-                    mll.draw_lines(frameLeftColor, linesV, (200, 20, 20), 3)
-                    line_points= [[ptc_1[1], ptc_1[0], 0.0], [ptc_2[1], ptc_2[0], 0.0]]
+                        lspt1 = (x+w//2,0,0) # 3D point, z = 0
+                        lspt2 = (x+w//2,h,0)
+                        line_points = [lspt1,lspt2]
+                        cv.line(frameLeftColor,lspt1[:-1],lspt2[:-1],(255,0,0),5)
+                # print(f'before: cv_image.shape={cv_image.shape}') 
+                if line_points is not None:
+                    self.get_logger().info(f" vertical line: x = {line_points}")
                     self.publish_line(line_points)
-                    # self.publish_line([ptc_1,ptc_2])
                 else:
                     self.get_logger().info(f"no vertical line")
                     
