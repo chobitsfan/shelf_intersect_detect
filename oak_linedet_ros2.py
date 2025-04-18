@@ -28,6 +28,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 import os
 import sys
 
+from scipy import ndimage  # for max filter
 sys.path.insert(0, '/home/pi/Programs/warehouse_nav/lines_and_template')
 # sys.path.insert(0, '/home/pi/Programs/warehouse_nav/lines_and_template')
 
@@ -68,7 +69,7 @@ class ImageSubscriber(Node):
             self.cv_window_name = None
         #Create default parametrization LSD
         self.lsd = cv.createLineSegmentDetector(0)
-        self.min_line_length = 150 # should deend on input image height, for now from warehouse inim shape 
+        self.min_line_length = 150 # should depend on input image height, for now from warehouse inim shape 
                                     # is 288,38470
         init_h_angle = 10
         init_v_angle = 10 # delta from 90°
@@ -174,20 +175,70 @@ class ImageSubscriber(Node):
 
             if cv_image is not None and not cv_image.size == 0: # Check if image is valid
                                                                 # if so run the template detector
+                # do_denoise = True
                 do_denoise = False
-                do_thresh = False
+                do_thresh = True
+                # do_thresh = False
+                do_minfilt = True
+                do_maxfilt = True
+                frameLeftColor= cv.cvtColor(cv_image, cv.COLOR_GRAY2BGR)
+                if do_maxfilt:
+                    cv_image = ndimage.maximum_filter(cv_image, size=10)
+                    # cv.imshow('max filter ', cv_image)
+                if do_minfilt:
+                    cv_image = ndimage.minimum_filter(cv_image, size=5)
+                    # cv.imshow('min filter ', cv_image)
                 # keep only dark Sectionss
                 if do_thresh:
-                    cv_image [cv_image >= 60] = 255
-                    cv_image [cv_image <60] = 0
+                    thresh = 70 # grey level 
+                    cv_image [cv_image >= thresh] = 255
+                    cv_image [cv_image <thresh] = 0
+                    # cv.imshow('thresholded ', cv_image)
                 # denoise
                 if do_denoise:
-                    kernel = np.ones((5,5),np.uint8)
-                    cv_image = cv.dilate(cv_image,kernel,iterations=1)
+                    ksz = 5
+                    kernel = np.ones((ksz,ksz),np.uint8)
+                    # cv_image = cv.dilate(cv_image,kernel,iterations=1)
                     cv_image = cv.erode(cv_image,kernel,iterations=2)
                 # cv_image = cv.morphologyEx(cv_image,cv.MORPH_OPEN,kernel)
+                do_contour_det = True
+
+                if do_contour_det:
+                    # Convert the grayscale image to binary
+                    # ret, binary = cv.threshold(cv_image, 60, 255, 
+                      # cv.THRESH_OTSU)
+                    binary = cv_image.copy()
+                    # cv.imshow('binary image', binary)
+                    # need black bg to detect object contours
+                    # so we invert the image
+                    inverted_binary = ~binary
+                    # cv.imshow('Inverted binary image', inverted_binary)
+                    # Find the contours on the inverted binary image, and store them in a list
+                    # Contours are drawn around white blobs.
+                    # hierarchy variable contains info on the relationship between the contours
+                    contours, hierarchy = cv.findContours(inverted_binary,
+                      cv.RETR_TREE,
+                      cv.CHAIN_APPROX_SIMPLE)
+                    # with_contours = cv.drawContours(frameLeftColor, contours, -1,(255,0,255),3)
+                    # cv.imshow('Detected contours', with_contours)
+                    # Show the total number of contours that were detected
+                    print('Total number of contours detected: ' + str(len(contours)))
+                    # Draw a bounding box around all contours
+                    for c in contours:
+                      x, y, w, h = cv.boundingRect(c)
+                     
+                        # select contour by areay or height...
+                      if h > 150 and (w > 50 and w < 100):
+                      # if (cv.contourArea(c)) > 10:
+                        # cv.rectangle(frameLeftColor,(x,y), (x+w,y+h), (0,255,0), 5)
+                        lspt1 = (x+w//2,0)
+                        lspt2 = (x+w//2,h)
+                        cv.line(frameLeftColor,lspt1,lspt2,(255,0,0),5)
+                    # cv.imshow('All contours with bounding box', with_contours)
+                             
                 print(f'before: cv_image.shape={cv_image.shape}') 
-                linesLeft = self.lsd.detect(cv_image)[0] 
+                linesLeft = self.lsd.detect(inverted_binary)[0] 
+                # linesLeft = self.lsd.detect(cv_image)[0] 
                 print(f'after: len(linesLeft) = {len(linesLeft)}') 
                 linesLeft = mll.from_lsd(linesLeft)
 
@@ -201,9 +252,8 @@ class ImageSubscriber(Node):
                 linesV = linesLeft[(np.abs(scal) < (self.v_cos_tol0)) & (np.abs(scal) > (self.v_cos_tol1))]
                 print(f'after filter length: len(linesLeft) = {len(linesLeft)}') 
 
-                frameLeftColor= cv.cvtColor(cv_image, cv.COLOR_GRAY2BGR)
                 # if len(linesLeft) is not None:
-                if len(linesV) > 2: # is not None:
+                if len(linesV) > 5: # is not None:
                     ptc_1 = self.line_orig(linesV[0],frameLeftColor.shape[1],frameLeftColor.shape[0])
                     ptc_2 = self.line_orig(linesV[2],frameLeftColor.shape[1],frameLeftColor.shape[0])
                     # print(f'ptc_1 = {ptc_1}, ptc_2 = {ptc_2}')
