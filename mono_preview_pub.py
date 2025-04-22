@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# the left mono image is optionally resized or cropped
 
 import cv2
 import depthai as dai
@@ -19,6 +20,7 @@ pipeline = dai.Pipeline()
 monoLeft = pipeline.create(dai.node.MonoCamera)
 xoutLeft = pipeline.create(dai.node.XLinkOut)
 
+# resize or crop the image
 manip = pipeline.create(dai.node.ImageManip)
 #manip.initialConfig.setResize(320, 240)
 manip.initialConfig.setCropRect(0.2, 0.2, 0.8, 0.8) # specifies crop with rectangle with normalized values (0..1)
