@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-# use locally published disparity, from mono_dispar_pub.py
-# goal: publish line (tbd: ros2 polygone?) of vertical structure
-# tested on rapsberry pi in virtualenvironment envDepthAI
-# with an oak camera connected to the pi, run the publisher:
-# python mono_preview_pub.py
-# in another terminal or tab in tmux, run this file:
-# the published image with template is published and can be seen in rviz with topic
-# usage 
-# run either mono_preview_pub.py to get a live image from the oak,
-# or play a relevant rosbag, for example:
-# ros2 bag play rosbag2_2025_04_16-10_22_10/
-
 import cv2 as cv
 import rclpy
 from rclpy.node import Node
@@ -18,7 +5,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Header
 import numpy as np
 # for point cloud
-from geometry_msgs.msg import Point,PointStamped
+from geometry_msgs.msg import Point, PointStamped
 from geometry_msgs.msg import Polygon, Point32
 from visualization_msgs.msg import Marker
 from std_msgs.msg import ColorRGBA
@@ -34,35 +21,34 @@ class ImageSubscriber(Node):
     def __init__(self):
         super().__init__('image_subscriber')
         best_effort_qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=1, durability=DurabilityPolicy.VOLATILE)
-        self.subscription = self.create_subscription(
+        self.mono_subscription = self.create_subscription(
             Image,
             '/mono_left',
-            self.image_callback,
+            self.mono_callback,
             qos_profile=best_effort_qos)
-            # 1)
-        self.disp_subscription = self.create_subscription(
+        self.disparity_subscription = self.create_subscription(
             Image,
             '/disparity_oak',
             self.disparity_callback,
             qos_profile=best_effort_qos)
-            # 1)
         self.publisher = self.create_publisher(
             Image,
-            '/vert_line_det_img',  
+            '/vert_line_det_img',
             1)
         self.polygon_publisher_ = self.create_publisher(Polygon, 'vert_line_polygon', 10)
         self.marker_publisher_ = self.create_publisher(Marker, 'vert_line_marker', 10)
-        # self.timer_ = self.create_timer(1.0,self.image_callback)
         self.seq = 0
         if 'DISPLAY' in os.environ:
             self.cv_window_name = "lineDetImage"
             cv.namedWindow(self.cv_window_name, cv.WINDOW_NORMAL)  # Allow resizing
+            cv.namedWindow('mono', cv.WINDOW_NORMAL)
+            cv.namedWindow('disparity', cv.WINDOW_NORMAL)
         else:
             self.cv_window_name = None
-        self.mono_left_img = None
-        self.disparity_img = None
+        self.mono_left_msg = None
+        self.disparity_msg = None
 
-    def publish_line(self,line_points):
+    def publish_line(self, line_points):
         """get two points and show a line segment """
         # line_points= [[0.0, 0.0, 0.0], [2.0, 1.0, 0.0]]
         # line_points_numpy = np.array([[0.0, -1.0, 0.0], [2.0, 0.0, 0.0]])
@@ -97,7 +83,7 @@ class ImageSubscriber(Node):
         marker_msg = Marker()
         marker_msg.header.frame_id = "map"
         marker_msg.header.stamp = self.get_clock().now().to_msg()
-        marker_msg.ns = "line_visualization" # namespace
+        marker_msg.ns = "line_visualization"  # namespace
         marker_msg.id = 0
         marker_msg.type = Marker.LINE_STRIP
         marker_msg.action = Marker.ADD
@@ -115,8 +101,8 @@ class ImageSubscriber(Node):
             # the polygon is unchanged (screen px,py)
             # p1 = Point(x=float(points[0][0]*pix_to_m), y=float(points[0][1]*pix_to_m), z=float(0))
             # p2 = Point(x=float(points[1][0]*pix_to_m), y=float(points[1][1]*pix_to_m), z=float(0))
-            p1 = Point(x=float(1.0), y=float(points[0][0]*pix_to_m), z=float(points[0][1]*pix_to_m))
-            p2 = Point(x=float(1.0), y=float(points[1][0]*pix_to_m), z=float(points[1][1]*pix_to_m))
+            p1 = Point(x=float(1.0), y=float(points[0][0] * pix_to_m), z=float(points[0][1] * pix_to_m))
+            p2 = Point(x=float(1.0), y=float(points[1][0] * pix_to_m), z=float(points[1][1] * pix_to_m))
             marker_msg.points = [p1, p2]
         else:
             self.get_logger().warn("Need a list of two points.")
@@ -138,19 +124,21 @@ class ImageSubscriber(Node):
                 cv_image = data.reshape((height, width))  # Reshape for grayscale
             else:
                 self.get_logger().warn(f"Unsupported encoding: {encoding}")
-                return  # Don't try to display
+                return  
 
             if cv_image is not None and not cv_image.size == 0: # Check if image is valid
-                                                                # if so run the template detector
                 self.disparity_img = cv_image.copy()
-                cv.imshow('disparity',self.disparity_img)
+                print(f'disparity {width}x{height}')
+                cv.imshow('disparity', self.disparity_img)
+                self.disparity_msg = msg # Store the ROS message
+                self.process_images() # Call the processing function
             else:
-                self.get_logger().error("Could not create get disparity.")
+                self.get_logger().error("Didn't get disparity.")
 
         except Exception as e:
-            self.get_logger().error(f"Error in callback: {e}")
+            self.get_logger().error(f"Error in disparity_callback: {e}")
 
-    def image_callback(self, msg):
+    def mono_callback(self, msg):
         try:
             width = msg.width
             height = msg.height
@@ -165,94 +153,107 @@ class ImageSubscriber(Node):
                 cv_image = data.reshape((height, width))  # Reshape for grayscale
             else:
                 self.get_logger().warn(f"Unsupported encoding: {encoding}")
-                return  # Don't try to display
+                return  
 
             if cv_image is not None and not cv_image.size == 0: # Check if image is valid
                 self.mono_left_img = cv_image.copy()
-                cv.imshow('mono',self.mono_left_img)
+                print(f'mono {width}x{height}')
+                cv.imshow('mono', self.mono_left_img)
+                self.mono_left_msg = msg # Store the ROS message
+                self.process_images() # Call the processing function
         except Exception as e:
             self.get_logger().error(f"Didnt get monoleft: {e}")
 
-    def line_det_callback(self):
-        if self.disparity_img is not None and self.mono_left_img is not None:
-            self.get_logger().info('Got Both images ')
-            # do_denoise = True
+    def process_images(self):
+        if self.disparity_msg is not None and self.mono_left_msg is not None:
+            # Optional: Check if the timestamps are close enough to be considered synchronized
+            mono_stamp = self.mono_left_msg.header.stamp
+            disparity_stamp = self.disparity_msg.header.stamp
+            time_diff_ns = abs((mono_stamp.sec - disparity_stamp.sec) * 1e9 + (mono_stamp.nanosec - disparity_stamp.nanosec))
+            if time_diff_ns < 1e9: # 1 second tolerance (nanosec)
+                self.get_logger().info('Got synchronized mono and disparity images')
+                self.line_det_callback(self.mono_left_img.copy()) # Pass a copy to avoid modification issues
+                # "Reset" images
+                self.disparity_msg = None
+                self.mono_left_msg = None
+            else:
+                self.get_logger().warn(f'Mono and disparity images are not synchronized. Time difference: {time_diff_ns / 1e9:.3f} seconds.')
+        # Optionally, you could add logic to handle cases where one stream is consistently faster.
+
+
+    def line_det_callback(self, mono_img):
+        if mono_img is not None:
+            self.get_logger().info('Processing mono image for line detection')
             do_denoise = False
             do_thresh = True
-            # do_thresh = False
             do_minfilt = True
             do_maxfilt = True
-            frameLeftColor= cv.cvtColor(self.mono_left_img, cv.COLOR_GRAY2BGR)
+            frameLeftColor = cv.cvtColor(mono_img, cv.COLOR_GRAY2BGR)
+            temp_mono_img = mono_img.copy() # Work on a copy
+
             if do_maxfilt:
-                self.mono_left_img = ndimage.maximum_filter(self.mono_left_img, size=10)
+                temp_mono_img = ndimage.maximum_filter(temp_mono_img, size=10)
             if do_minfilt:
-                self.mono_left_img = ndimage.minimum_filter(self.mono_left_img, size=5)
+                temp_mono_img = ndimage.minimum_filter(temp_mono_img, size=5)
             # keep only dark Sectionss
             if do_thresh:
-                thresh = 70 # grey level 
-                self.mono_left_img [self.mono_left_img >= thresh] = 255
-                self.mono_left_img [self.mono_left_img <thresh] = 0
-                # ret, binary = cv.threshold(self.mono_left_img, 60, 255, 
+                # thresh = 70 # grey level at warehouse
+                thresh = 50 # grey level on the desk
+                temp_mono_img[temp_mono_img >= thresh] = 255
+                temp_mono_img[temp_mono_img < thresh] = 0
+                # ret, binary = cv.threshold(self.mono_left_img, 60, 255,
             # denoise
             if do_denoise:
                 ksz = 5
                 kernel = np.ones((ksz,ksz),np.uint8)
                 # self.mono_left_img = cv.dilate(self.mono_left_img,kernel,iterations=1)
-                self.mono_left_img = cv.erode(self.mono_left_img,kernel,iterations=2)
-            do_contour_det = True
+                temp_mono_img = cv.erode(temp_mono_img,kernel,iterations=2)
+            # Convert the grayscale image to binary
+                # cv.THRESH_OTSU)
+            binary = temp_mono_img.copy()
+            # need black bg to detect object contours
+            # so we invert the image
+            inverted_binary = ~binary
+            # get contours on the inverted binary image
+            # Contours are around WHITE blobs.
+            # hierarchy variable contains info on the relationship between the contours
+            contours, hierarchy = cv.findContours(inverted_binary,
+                cv.RETR_TREE,
+                cv.CHAIN_APPROX_SIMPLE)
+            # lspt1, lspt2 = None, None
+            line_points = None
+            for c in contours:
+                x, y, w, h = cv.boundingRect(c)
 
-            if do_contour_det:
-                # Convert the grayscale image to binary
-                  # cv.THRESH_OTSU)
-                binary = self.mono_left_img.copy()
-                # need black bg to detect object contours
-                # so we invert the image
-                inverted_binary = ~binary
-                # get contours on the inverted binary image
-                # Contours are around WHITE blobs.
-                # hierarchy variable contains info on the relationship between the contours
-                contours, hierarchy = cv.findContours(inverted_binary,
-                  cv.RETR_TREE,
-                  cv.CHAIN_APPROX_SIMPLE)
-                # lspt1, lspt2 = None, None
-                line_points = None
-                for c in contours:
-                  x, y, w, h = cv.boundingRect(c)
-                 
                 # select contour by areay or height...
-                  if h > 150 and (w > 50 and w < 100):
-                  # if (cv.contourArea(c)) > 10:
+                if h > 100 and (w > 10 and w < 90):
+                # if h > 150 and (w > 50 and w < 100):
+                # if (cv.contourArea(c)) > 10:
                     lspt1 = (x+w//2,0,0) # 3D point, z = 0
                     lspt2 = (x+w//2,h,0)
                     line_points = [lspt1,lspt2]
                     cv.line(frameLeftColor,lspt1[:-1],lspt2[:-1],(255,0,0),5)
-            # print(f'before: cv_image.shape={cv_image.shape}') 
+            # print(f'before: cv_image.shape={cv_image.shape}')
             if line_points is not None:
                 self.get_logger().info(f" vertical line: x = {line_points}")
                 self.publish_line(line_points)
             else:
                 self.get_logger().info(f"no vertical line")
-                
+
             cv.imshow(self.cv_window_name,frameLeftColor)
             # new ROS Image message following Chobits' model
             new_msg = Image()
-            new_msg.header = msg.header  
-            new_msg.height = height
-            new_msg.width = width
+            new_msg.header = self.mono_left_msg.header # Use the header of the mono image
+            new_msg.height = mono_img.shape[0]
+            new_msg.width = mono_img.shape[1]
             new_msg.encoding = "bgr8"  # encoding: color to show the template ROI
-            new_msg.step = width * 3  # BGR8: 3 bytes per pixel
+            new_msg.step = new_msg.width * 3  # BGR8: 3 bytes per pixel
             new_msg.data = frameLeftColor.tobytes() # Convert to bytes
 
             self.publisher.publish(new_msg)
-            # Reset for the next pair
-            self.disparity_img = None  
-            self.mono_left_img = None 
 
-            # publish the template COG as a geometry_msgs
-            # add fake depth(for testing function) to point tempcog
-            # publish only if a valid COG is found
-            if self.cv_window_name is not None:
-                cv.waitKey(1)
+        if self.cv_window_name is not None:
+            cv.waitKey(1)
         else:
             self.get_logger().error("error TODO be specific!.")
 

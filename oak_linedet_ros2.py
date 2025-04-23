@@ -118,8 +118,6 @@ class ImageSubscriber(Node):
             # reorder so that the line appears as a vertical line in rviz
             # pixel px,py -> rviz x,y,z = value,px,py
             # the polygon is unchanged (screen px,py)
-            # p1 = Point(x=float(points[0][0]*pix_to_m), y=float(points[0][1]*pix_to_m), z=float(0))
-            # p2 = Point(x=float(points[1][0]*pix_to_m), y=float(points[1][1]*pix_to_m), z=float(0))
             p1 = Point(x=float(1.0), y=float(points[0][0]*pix_to_m), z=float(points[0][1]*pix_to_m))
             p2 = Point(x=float(1.0), y=float(points[1][0]*pix_to_m), z=float(points[1][1]*pix_to_m))
             marker_msg.points = [p1, p2]
