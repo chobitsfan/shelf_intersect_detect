@@ -10,12 +10,18 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import Header
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 import numpy as np
 
 rclpy.init()
 node = rclpy.create_node('oakd')
-img_pub = node.create_publisher(Image, "mono_left", 1)
-disparity_pub = node.create_publisher(Image, "disparity_oak", 1)
+best_effort_qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=1, durability=DurabilityPolicy.VOLATILE)
+# reliable QoS
+# img_pub = node.create_publisher(Image, "mono_left", 1)
+# disparity_pub = node.create_publisher(Image, "disparity_oak", 1)
+# best effort QoS
+img_pub = node.create_publisher(Image, "mono_left", best_effort_qos)
+disparity_pub = node.create_publisher(Image, "disparity_oak", best_effort_qos)
 
 # Create pipeline
 pipeline = dai.Pipeline()
@@ -44,7 +50,17 @@ LEFT_SOCKET = dai.CameraBoardSocket.CAM_B # that's left, LEFT is deprecated
 stereo.initialConfig.setConfidenceThreshold(255)
 stereo.initialConfig.setLeftRightCheck(True)
 stereo.setDepthAlign(LEFT_SOCKET)
-stereo.initialConfig.setSubpixel(False)
+
+subpixelon=True
+if subpixelon:
+    img_encoding = "mono16"
+    img_step_factor = 2
+else:
+    img_encoding = "mono8"
+    img_step_factor = 2
+
+# stereo.initialConfig.setSubpixel(False)
+stereo.initialConfig.setSubpixel(subpixelon)
 
 # ImageManip nodes for cropping
 crop_x_min = 0.2
@@ -106,8 +122,8 @@ with dai.Device(pipeline) as device:
         imgDisparity.height = inDisparity.getHeight()
         imgDisparity.width = inDisparity.getWidth()
         imgDisparity.is_bigendian = 0
-        imgDisparity.encoding = "mono8"
-        imgDisparity.step = inDisparity.getWidth()
+        imgDisparity.encoding = img_encoding # "mono8"
+        imgDisparity.step = inDisparity.getWidth() * img_step_factor
         imgDisparity.data = frameDisparity.tobytes()
         disparity_pub.publish(imgDisparity)
 
