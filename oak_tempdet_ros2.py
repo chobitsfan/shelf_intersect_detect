@@ -19,6 +19,7 @@ import numpy as np
 # for point cloud
 from geometry_msgs.msg import Point,PointStamped
 import os
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 
 # import sys, getopt # no more needed 
 
@@ -27,23 +28,24 @@ class ImageSubscriber(Node):
 
     def __init__(self):
         super().__init__('image_subscriber')
+        my_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.BEST_EFFORT, durability=QoSDurabilityPolicy.VOLATILE)
         self.subscription = self.create_subscription(
             Image,
             '/mono_left',
             self.image_callback,
-            1)
+            my_qos)
         self.publisher = self.create_publisher(
             Image,
             '/templatematch_image',  # Publish the image with template to a new topic
-            1)
+            my_qos)
         self.point_publisher = self.create_publisher(
             Point,
             '/templateCOG',  # template Center of Gravity
-            10)
+            1)
         self.pointstamped_pub = self.create_publisher(
             PointStamped,
             '/templateCOG_stampd',  # template Center of Gravity
-            10)
+            1)
         # self.timer_ = self.create_timer(1.0,self.image_callback)
         self.seq = 0
         if 'DISPLAY' in os.environ:
