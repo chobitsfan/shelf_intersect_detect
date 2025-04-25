@@ -119,11 +119,13 @@ class ImageSubscriber(Node):
 
             if cv_image is not None and not cv_image.size == 0: # Check if image is valid
                                                                 # if so run the template detector
-                # use reduced ROI
+                # may use reduced ROI
                 margn = 0
-                cv_image_roi = cv_image[margn:height - margn,margn:width-margn]
-                kp2, desc2 = self.detector.detectAndCompute(cv_image_roi, None)
-                # kp2, desc2 = self.detector.detectAndCompute(cv_image, None)
+                if margn == 0:
+                    kp2, desc2 = self.detector.detectAndCompute(cv_image, None)
+                else:
+                    cv_image_roi = cv_image[margn:height - margn,margn:width-margn]
+                    kp2, desc2 = self.detector.detectAndCompute(cv_image_roi, None)
 
                 # uncomment to show nb of features in the template
                 # print('self.templt_img - %d features' % (len(self.kp1)))
@@ -142,14 +144,13 @@ class ImageSubscriber(Node):
                         print('%d matches found, not enough for homography estimation' % len(p1))
 
                     _vis, _tempcog = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H,margin = margn)
-                    # _vis, _tempcog = explore_match_simple(win, self.templt_img, cv_image, kp_pairs, H)
+
                     # cv.imshow('win',cv_image_roi)
                     if win is not None:
                         cv.imshow(win, _vis)
                     return _vis, _tempcog
 
                 tempmatchimg,tempcog = match_and_draw(self.cv_window_name,margin=margn)
-                # tempmatchimg,tempcog = match_and_draw(self.cv_window_name)
 
                 # new ROS Image message following Chobits' model
                 new_msg = Image()
