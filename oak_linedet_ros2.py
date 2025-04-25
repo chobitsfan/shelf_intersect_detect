@@ -40,7 +40,7 @@ class ImageSubscriber(Node):
 
         # Create subscribers for the mono and disparity images
         self.mono_sub = Subscriber(self, Image, '/mono_left', qos_profile=best_effort_qos)
-        self.disparity_sub = Subscriber(self, Image, '/disparity_oak', qos_profile=best_effort_qos)
+        self.disparity_sub = Subscriber(self, Image, '/disparity', qos_profile=best_effort_qos)
 
         # Create the TimeSynchronizer
         # The '10' here is the queue size, and '0.1' is the allowed delay (in seconds)
