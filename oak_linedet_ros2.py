@@ -150,9 +150,10 @@ class ImageSubscriber(Node):
             disparity_img = self.bridge_image(disparity_msg)
 
             if mono_img is not None and disparity_img is not None:
-                cv.imshow('mono', mono_img)
-                cv.imshow('disparity', disparity_img)
-                cv.waitKey(1)
+                if self.cv_window_name is not None:
+                    cv.imshow('mono', mono_img)
+                    cv.imshow('disparity', disparity_img)
+                    cv.waitKey(1)
                 # self.line_det_callback(mono_img.copy(), mono_msg.header) # Pass a copy and the header
                 # line_points = self.line_det_callback(mono_img.copy(), mono_msg.header) # Get line points
                 line_points = self.line_det_callback(mono_img.copy(),disparity_img.copy(), mono_msg.header) # Get line points
@@ -282,7 +283,8 @@ class ImageSubscriber(Node):
 
             # for debug
             # cv.line(frameLeftColor,(100,0),(100,200),(0,255,0),5)
-            cv.imshow(self.cv_window_name,frameLeftColor)
+            if self.cv_window_name is not None:
+                cv.imshow(self.cv_window_name,frameLeftColor)
             if line_points is not None:
                 self.get_logger().info(f" vertical line: x = {line_points}, \n dist: {dist2roi}")
                 self.publish_line(line_points)
