@@ -182,9 +182,10 @@ class ImageSubscriber(Node):
                     self.get_logger().info(f" template COG stamped: x,y,z = {pointstamped_msg.point.x,pointstamped_msg.point.y,pointstamped_msg.point.z}")
                     # simple point (seems can't be shown in rviz)
                     point_msg = Point()
-                    point_msg.x = tempcog3d[0]
-                    point_msg.y = tempcog3d[1]
-                    point_msg.z = tempcog3d[2]
+                    # normalized pixel coordinate
+                    point_msg.x = tempcog[0] / width
+                    point_msg.y = tempcog[1] / height
+                    point_msg.z = 0
                     self.point_publisher.publish(point_msg)
                     self.get_logger().info(f" template COG: x = {point_msg.x,point_msg.y,point_msg.z}")
                 else:
