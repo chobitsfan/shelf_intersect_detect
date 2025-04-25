@@ -54,7 +54,7 @@ class ImageSubscriber(Node):
         else:
             self.cv_window_name = None
         # fn1 = '10x18cm_at_d_90cm.png'
-        fn1 = 'yangmei_printed.png'
+        fn1 = 'img/yangmei_printed.png'
         # fn1 = 'cropped_image.png'
 
         self.templt_img = cv.imread(cv.samples.findFile(fn1), cv.IMREAD_GRAYSCALE)
