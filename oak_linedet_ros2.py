@@ -63,9 +63,9 @@ class ImageSubscriber(Node):
         else:
             self.cv_window_name = None
 
-    def publish_line(self, line_points):
+    def publish_line(self, line_points, img_shape):
         """ publish polygon msg made of 2 points, top and bottom of center line of vertical structure
-        p1.x,p1.y: top x,y of line, in pixel, refereing to the received (subscribed) image, that image is currently cropped
+        p1.x,p1.y: top x,y of line, in normalized pixel coordinate (0..1), refereing to the received (subscribed) image, that image is currently cropped
         p2.x,p2.y: same but for the bottom point
         p1.z,p2.z: distance to the middle of the line
         """
@@ -74,8 +74,8 @@ class ImageSubscriber(Node):
         print(f'in publish_line:{line_points, line_points[0], line_points[0][0]}')
         polygon_msg_list = Polygon()
         if len(line_points) == 2:
-            p1 = Point32(x=float(line_points[0][0]), y=float(line_points[0][1]), z=float(line_points[0][2]))
-            p2 = Point32(x=float(line_points[1][0]), y=float(line_points[1][1]), z=float(line_points[1][2]))
+            p1 = Point32(x=line_points[0][0]/img_shape[1], y=line_points[0][1]/img_shape[0], z=float(line_points[0][2]))
+            p2 = Point32(x=line_points[1][0]/img_shape[1], y=line_points[1][1]/img_shape[0], z=float(line_points[1][2]))
             polygon_msg_list.points = [p1, p2]
         else:
             self.get_logger().warn("Need list of two points")
@@ -287,7 +287,7 @@ class ImageSubscriber(Node):
                 cv.imshow(self.cv_window_name,frameLeftColor)
             if line_points is not None:
                 self.get_logger().info(f" vertical line: x = {line_points}, \n dist: {dist2roi}")
-                self.publish_line(line_points)
+                self.publish_line(line_points, mono_img.shape)
                 new_msg = Image()
                 new_msg.header = header # Use the header of the synchronized mono image
                 new_msg.height = mono_img.shape[0]
