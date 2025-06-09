@@ -51,7 +51,7 @@ class ImageSubscriber(Node):
         self.publisher = self.create_publisher(
             Image,
             '/vert_line_det_img',
-            1)
+            best_effort_qos)
         self.polygon_publisher_ = self.create_publisher(Polygon, 'vert_line_polygon', 1)
         self.marker_publisher_ = self.create_publisher(Marker, 'vert_line_marker', 10)
 
