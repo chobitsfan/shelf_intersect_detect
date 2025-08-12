@@ -43,6 +43,11 @@ class ImageSubscriber(Node):
             self.image_callback,
             qos_profile=best_effort_qos)
             # 1)
+        self.templatecog_pt = self.create_subscription(
+            Point,
+            '/templateCOG',
+            self.tempcog_callback,
+            1)
         self.publisher = self.create_publisher(
             Image,
             '/vert_line_det_img',  
@@ -51,11 +56,17 @@ class ImageSubscriber(Node):
         self.marker_publisher_ = self.create_publisher(Marker, 'vert_line_marker', 10)
         # self.timer_ = self.create_timer(1.0,self.image_callback)
         self.seq = 0
+        self.latesttempcog = None
+
         if 'DISPLAY' in os.environ:
             self.cv_window_name = "lineDetImage"
             cv.namedWindow(self.cv_window_name, cv.WINDOW_NORMAL)  # Allow resizing
         else:
             self.cv_window_name = None
+
+    def tempcog_callback(self,msg):
+        self.latesttempcog = msg
+        self.get_logger().info(f"Latest template COG = {msg.x,msg.y}.")
 
     def publish_line(self,line_points):
         """get two points and show a line segment """
@@ -175,10 +186,13 @@ class ImageSubscriber(Node):
                       cv.CHAIN_APPROX_SIMPLE)
                     # lspt1, lspt2 = None, None
                     line_points = None
+                    search_x_vert = width //2
                     for c in contours:
                       x, y, w, h = cv.boundingRect(c)
                      
-                    # select contour by areay or height...
+                    # select contour by area or height...
+                      if latesttempcog is not None:
+                          search_x_vert = latesttempcog.x
                       if h > 150 and (w > 50 and w < 100):
                       # if (cv.contourArea(c)) > 10:
                         lspt1 = (x+w//2,0,0) # 3D point, z = 0
