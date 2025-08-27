@@ -234,8 +234,8 @@ class ImageSubscriber(Node):
             if do_thresh:
                 # TODO here need match warehouse scene (vert structure grey level)
                 # thresh = 30 # grey level
-                thresh = 50 # grey level
-                # thresh = 70 # grey level using rosbag so should be good for warehouse
+                # thresh = 50 # grey level
+                thresh = 70 # grey level using rosbag so should be good for warehouse
                 temp_mono_img[temp_mono_img >= thresh] = 255
                 temp_mono_img[temp_mono_img < thresh] = 0
             if do_denoise:
@@ -256,8 +256,8 @@ class ImageSubscriber(Node):
                 for c in contours:
                     x, y, w, h = cv.boundingRect(c)
                     # TODO here need match warehouse param
-                    if h > 100 and (w > 10 and w < 90):
-                    # if h > 150 and (w > 50 and w < 100):
+                    # if h > 100 and (w > 10 and w < 90):
+                    if h > 150 and (w > 50 and w < 100):
                         # structure detected get its depth from disparity
                         lcx = x+w//2 # line center x
                         lcy = y+h//2 # line center y
