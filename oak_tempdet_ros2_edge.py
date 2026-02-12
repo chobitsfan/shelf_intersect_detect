@@ -64,8 +64,10 @@ class ImageSubscriber(Node):
             self.cv_window_name = None
         # fn1 = '10x18cm_at_d_90cm.png'
         fn1 = 'img/yangmei_printed.png'
-        fn_left = 'img/yangmei_printed_crop_left.jpg'
-        fn_right = 'img/yangmei_printed_crop_right.jpg'
+        fn_left = 'img/Ruifang_Down_Template.jpg'
+        fn_right = 'img/Ruifang_Top_Template.jpg'
+        # fn_left = 'img/yangmei_printed_crop_left.jpg'
+        # fn_right = 'img/yangmei_printed_crop_right.jpg'
         # fn_left = 'img/yangmei_edge_left.jpg'
         # fn_right = 'img/yangmei_edge_right.jpg'
         # fn1 = 'cropped_image.png'
@@ -168,10 +170,10 @@ class ImageSubscriber(Node):
                 # def match_and_draw(win):
                     p1, p2, kp_pairs, H, status, explore_template_image = [], [], [], None, None, None
                     if self.detect_edge_value == 0:
-                        explore_template_image = self.templt_img
-                        raw_matches = self.matcher.knnMatch(self.desc1, trainDescriptors = desc2, k = 2) #2
+                        explore_template_image = self.templt_left_img
+                        raw_matches = self.matcher.knnMatch(self.desc_left, trainDescriptors = desc2, k = 2) #2
                         # p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches)
-                        p1, p2, kp_pairs = filter_matches(self.kp1, kp2, raw_matches,ratio = 0.9)
+                        p1, p2, kp_pairs = filter_matches(self.kp_left, kp2, raw_matches,ratio = 0.9)
                         if len(p1) >= 4:
                             H, status = cv.findHomography(p1, p2, cv.RANSAC, 5.0)
                             # uncomment to show nb of inliers and matched features
